@@ -281,22 +281,43 @@ class CartService(Component):
             qty = existing_item.product_uom_qty + params["item_qty"]
             self._upgrade_cart_item_quantity(cart, existing_item, qty)
         else:
-            with self.env.norecompute():
-                vals = self._prepare_cart_item(params, cart)
-                # the next statement is done with suspending the security for
-                #  performance reasons. It is safe only if both 3 following
-                # fields are filled on the sale order:
-                # - company_id
-                # - fiscal_position_id
-                # - pricelist_id
-                new_values = (
-                    self.env["sale.order.line"]
-                    .suspend_security()
-                    .play_onchanges(vals, vals.keys())
-                )
-                vals.update(new_values)
-                self.env["sale.order.line"].create(vals)
-            cart.recompute()
+            vals = self._prepare_cart_item(params, cart)
+            new_values = self._sale_order_line_onchange(vals)
+            vals.update(new_values)
+            # As the frontend could be in several languages but we have only
+            # one anonymous parnter with his language set, we need to ensure
+            # that description on the line is in the right language
+            partner = cart.partner_id
+            ctx_lang = self.env.context.get("lang", partner.lang)
+            if partner.lang != ctx_lang:
+                product_id = vals["product_id"]
+                vals["name"] = self._get_sale_order_line_name(product_id)
+            existing_item = self.env["sale.order.line"].create(vals)
+        existing_item.order_id.shopinvader_to_be_recomputed = True
+        return existing_item
+
+    def _get_sale_order_line_name(self, product_id):
+        product = self.env["product.product"].browse(product_id)
+        name = product.name_get()[0][1]
+        if product.description_sale:
+            name += "\n" + product.description_sale
+        return name
+
+    def _sale_order_line_onchange(self, vals):
+        """
+        Simulate the onchange on sale.order.line with given vals.
+        :param vals: dict
+        :return: dict
+        """
+        # the next statement is done with suspending the security for
+        #  performance reasons. It is safe only if both 3 following
+        # fields are filled on the sale order:
+        # - company_id
+        # - fiscal_position_id
+        # - pricelist_id
+        so_line_obj = self.env["sale.order.line"].suspend_security()
+        new_values = so_line_obj.play_onchanges(vals, vals.keys())
+        return new_values
 
     def _update_item(self, cart, params, item=False):
         if not item:
