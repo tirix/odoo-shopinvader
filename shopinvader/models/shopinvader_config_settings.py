@@ -21,7 +21,7 @@ class ShopinvaderConfigSettings(models.TransientModel):
     # external methods
     @api.model
     def is_partner_duplication_allowed(self):
-        param = self.env["ir.config_parameter"].get_param(
+        param = self.env["ir.config_parameter"].sudo().get_param(
             "shopinvader.no_partner_duplicate"
         )
         if not param:
